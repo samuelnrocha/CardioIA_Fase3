@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<title>Alerta Clínico CardioIA - Carlos Eduardo Lima</title>
+</head>
+<body style="margin:0;padding:24px;background-color:#f1f5f9;font-family:'Segoe UI',Roboto,Helvetica,Arial,sans-serif;color:#1e293b;">
+  <div style="max-width:680px;margin:0 auto;background:#ffffff;border-radius:12px;overflow:hidden;box-shadow:0 4px 20px rgba(15,23,42,0.12);border:1px solid #cbd5e1;">
+    <div style="background:#991b1b;color:#ffffff;padding:22px 28px;display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <div style="font-size:12px;text-transform:uppercase;letter-spacing:1.2px;opacity:0.9;">CardioIA Conectada • Automação RPA de Emergência</div>
+        <h1 style="margin:6px 0 0 0;font-size:22px;font-weight:700;">🚨 ALERTA CLÍNICO: NÍVEL CRITICO</h1>
+      </div>
+      <div style="background:#ef4444;padding:8px 14px;border-radius:8px;font-weight:700;font-size:14px;">
+        Escore: 100/100
+      </div>
+    </div>
+
+    <div style="padding:26px 28px;">
+      <p style="margin:0 0 16px 0;font-size:15px;line-height:1.5;">
+        Prezado(a) <strong>Dr. André Vasconcelos</strong>,<br>
+        O motor de monitoramento contínuo IoT <strong>CardioIA</strong> detectou uma alteração fisiológica aguda nos sinais vitais do(a) paciente abaixo:
+      </p>
+
+      <table style="width:100%;border-collapse:collapse;margin-bottom:20px;background:#f8fafc;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;">
+        <tr>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#64748b;width:35%;">Paciente Monitorado</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;font-weight:700;color:#0f172a;">Carlos Eduardo Lima (PAC-002)</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#64748b;">Data/Hora da Coleta</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#0f172a;">2026-11-02 12:50:18</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#64748b;">Batimentos Cardíacos (BPM)</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:15px;font-weight:700;color:#dc2626;">148 BPM <span style="font-size:12px;font-weight:400;color:#64748b;">(Ref: 50–100 BPM)</span></td>
+        </tr>
+        <tr>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#64748b;">Temperatura Corporal (DHT22)</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:15px;font-weight:700;color:#dc2626;">39.2 °C <span style="font-size:12px;font-weight:400;color:#64748b;">(Ref: 36.0–37.5 °C)</span></td>
+        </tr>
+        <tr>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:13px;color:#64748b;">Umidade Relativa (DHT22)</td>
+          <td style="padding:10px 14px;border-bottom:1px solid #e2e8f0;font-size:14px;color:#0f172a;">78.5 %</td>
+        </tr>
+        <tr>
+          <td style="padding:10px 14px;font-size:13px;color:#64748b;">Atividade Motora (MPU6050)</td>
+          <td style="padding:10px 14px;font-size:14px;font-weight:700;color:#dc2626;">
+            IMÓVEL / AUSÊNCIA DE MOVIMENTO (185s) (1.00 G)
+          </td>
+        </tr>
+      </table>
+
+      <div style="background:#fef2f2;border-left:4px solid #ef4444;padding:14px 18px;border-radius:6px;margin-bottom:20px;">
+        <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#991b1b;margin-bottom:8px;">Anomalias Clínicas Identificadas pelo Motor de Risco:</div>
+        <ul style="margin:0;padding-left:20px;font-size:14px;">
+          <li style='margin-bottom:6px;color:#7f1d1d;font-weight:600;'>Taquicardia Severa (148 BPM > 120 BPM)</li><li style='margin-bottom:6px;color:#7f1d1d;font-weight:600;'>Febre Alta / Hipertermia Severa (39.2 °C > 39.0 °C)</li><li style='margin-bottom:6px;color:#7f1d1d;font-weight:600;'>Ausência Prolongada de Movimento (185s sem atividade motora)</li><li style='margin-bottom:6px;color:#7f1d1d;font-weight:600;'>Sudorese Profusa / Diaforese Detectada (Umidade 78.5%)</li><li style='margin-bottom:6px;color:#7f1d1d;font-weight:600;'>Risco Elevado de Síncope Cardiogênica (Arritmia + Imobilidade)</li><li style='margin-bottom:6px;color:#7f1d1d;font-weight:600;'>Descompensação Cardiotérmica (Taquicardia + Febre)</li>
+        </ul>
+      </div>
+
+      <div style="background:#eff6ff;border-left:4px solid #2563eb;padding:14px 18px;border-radius:6px;">
+        <div style="font-size:13px;font-weight:700;text-transform:uppercase;color:#1e40af;margin-bottom:6px;">Conduta Médica Recomendada (Protocolo CardioIA):</div>
+        <div style="font-size:14px;color:#1e3a8a;line-height:1.45;">ACIONAMENTO IMEDIATO DE EMERGÊNCIA: Contatar paciente e familiar imediatamente, avaliar envio de ambulância/SAMU e preparar leito de estabilização hemodinâmica.</div>
+      </div>
+    </div>
+
+    <div style="background:#0f172a;color:#94a3b8;padding:14px 28px;font-size:12px;display:flex;justify-content:space-between;">
+      <span>Grupo Data Health Solutions • FIAP (Fase 3 — Ir Além 1)</span>
+      <span>Mensagem automática gerada via RPA Python (SMTP/REST)</span>
+    </div>
+  </div>
+</body>
+</html>

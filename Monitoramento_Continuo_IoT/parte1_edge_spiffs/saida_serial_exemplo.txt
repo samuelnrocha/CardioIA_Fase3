@@ -1,0 +1,44 @@
+============================================================
+   CARDIOIA - FASE 3 (PARTE 1: EDGE COMPUTING & SPIFFS)     
+   Grupo: Data Health Solutions - FIAP                      
+============================================================
+[SENSOR 1] DHT22 (Temperatura e Umidade) inicializado no GPIO 15.
+[SENSOR 2] Monitor de Pulso/BPM inicializado no GPIO 34 (ADC) e GPIO 4 (Botao).
+[SENSOR 3] Acelerometro MPU6050 inicializado via I2C (GPIO 21/22).
+------------------------------------------------------------
+[EDGE-STORAGE] Inicializando sistema de arquivos SPIFFS...
+[EDGE-STORAGE] SPIFFS montado com sucesso! Total: 1378201 bytes | Usado: 0 bytes
+[EDGE-STORAGE] Politica de Negocio CardioIA: Limite Flash = 10000 amostras (~640 KB) | Buffer RAM = 120 amostras
+------------------------------------------------------------
+[REDE] Estado inicial de conectividade Wi-Fi (wifiConectado): ONLINE (true)
+[DICA] Use a chave deslizante (GPIO 18) no Wokwi ou digite 'offline' / 'online' no Monitor Serial.
+
+[NUVEM-SYNC | TEMPO_REAL] {"paciente_id":"PAC-001","paciente":"Ana Beatriz Souza","seq":1,"timestamp_ms":3512,"temperatura_c":36.6,"umidade_pct":55.0,"bpm":76,"aceleracao_g":1.02,"em_movimento":true,"alerta_critico":false,"diagnostico_borda":"SINAIS_ESTAVEIS"}
+[NUVEM-SYNC | TEMPO_REAL] {"paciente_id":"PAC-001","paciente":"Ana Beatriz Souza","seq":2,"timestamp_ms":6514,"temperatura_c":36.7,"umidade_pct":55.0,"bpm":78,"aceleracao_g":1.14,"em_movimento":true,"alerta_critico":false,"diagnostico_borda":"SINAIS_ESTAVEIS"}
+
+>>> [STATUS REDE] Wi-Fi DESCONECTADO (wifiConectado = false) - Ativando Resiliencia Offline (Edge) <<<
+[OFFLINE -> SPIFFS] Amostra #3 gravada localmente (1/120 no buffer) | Temp: 36.8 C | Umid: 55.2% | BPM: 82 | Mov: ATIVO | Status: SINAIS_ESTAVEIS
+[OFFLINE -> SPIFFS] Amostra #4 gravada localmente (2/120 no buffer) | Temp: 37.4 C | Umid: 56.0% | BPM: 112 | Mov: ATIVO | Status: SINAIS_ESTAVEIS
+[OFFLINE -> SPIFFS] Amostra #5 gravada localmente (3/120 no buffer) | Temp: 38.4 C | Umid: 58.0% | BPM: 134 | Mov: ATIVO | Status: ALERTA_COMBINADO_TAQUICARDIA_E_FEBRE
+[OFFLINE -> SPIFFS] Amostra #6 gravada localmente (4/120 no buffer) | Temp: 38.5 C | Umid: 58.2% | BPM: 138 | Mov: PARADO | Status: ALERTA_COMBINADO_TAQUICARDIA_E_FEBRE
+
+>>> [STATUS REDE] Wi-Fi CONECTADO (wifiConectado = true) <<<
+
+============================================================
+[RECONEXAO WI-FI DETECTADA] Iniciando sincronizacao de resiliencia offline...
+[SYNC] Total de amostras retidas na borda (Edge): 4 amostras
+[SPIFFS-READ] Lendo arquivo local /leituras_offline.csv:
+  [CSV] seq,timestamp_ms,paciente_id,temperatura_c,umidade_pct,bpm,aceleracao_g,movimento,alerta,detalhe_alerta
+  [CSV] 3,9516,PAC-001,36.8,55.2,82,1.11,SIM,NORMAL,SINAIS_ESTAVEIS
+  [CSV] 4,12518,PAC-001,37.4,56.0,112,1.25,SIM,NORMAL,SINAIS_ESTAVEIS
+  [CSV] 5,15520,PAC-001,38.4,58.0,134,1.31,SIM,CRITICO,ALERTA_COMBINADO_TAQUICARDIA_E_FEBRE
+  [CSV] 6,18522,PAC-001,38.5,58.2,138,1.00,NAO,CRITICO,ALERTA_COMBINADO_TAQUICARDIA_E_FEBRE
+[NUVEM-SYNC | RESILIENCIA_OFFLINE] {"paciente_id":"PAC-001","paciente":"Ana Beatriz Souza","seq":3,"timestamp_ms":9516,"temperatura_c":36.8,"umidade_pct":55.2,"bpm":82,"aceleracao_g":1.11,"em_movimento":true,"alerta_critico":false,"diagnostico_borda":"SINAIS_ESTAVEIS"}
+[NUVEM-SYNC | RESILIENCIA_OFFLINE] {"paciente_id":"PAC-001","paciente":"Ana Beatriz Souza","seq":4,"timestamp_ms":12518,"temperatura_c":37.4,"umidade_pct":56.0,"bpm":112,"aceleracao_g":1.25,"em_movimento":true,"alerta_critico":false,"diagnostico_borda":"SINAIS_ESTAVEIS"}
+[NUVEM-SYNC | RESILIENCIA_OFFLINE] {"paciente_id":"PAC-001","paciente":"Ana Beatriz Souza","seq":5,"timestamp_ms":15520,"temperatura_c":38.4,"umidade_pct":58.0,"bpm":134,"aceleracao_g":1.31,"em_movimento":true,"alerta_critico":true,"diagnostico_borda":"ALERTA_COMBINADO_TAQUICARDIA_E_FEBRE"}
+[NUVEM-SYNC | RESILIENCIA_OFFLINE] {"paciente_id":"PAC-001","paciente":"Ana Beatriz Souza","seq":6,"timestamp_ms":18522,"temperatura_c":38.5,"umidade_pct":58.2,"bpm":138,"aceleracao_g":1.00,"em_movimento":false,"alerta_critico":true,"diagnostico_borda":"ALERTA_COMBINADO_TAQUICARDIA_E_FEBRE"}
+[SPIFFS-CLEAN] Arquivo local /leituras_offline.csv removido com sucesso apos sincronizacao!
+[SYNC-CONCLUIDO] Todos os dados offline foram sincronizados com a nuvem!
+============================================================
+
+[NUVEM-SYNC | TEMPO_REAL] {"paciente_id":"PAC-001","paciente":"Ana Beatriz Souza","seq":7,"timestamp_ms":21525,"temperatura_c":36.9,"umidade_pct":55.0,"bpm":80,"aceleracao_g":1.08,"em_movimento":true,"alerta_critico":false,"diagnostico_borda":"SINAIS_ESTAVEIS"}

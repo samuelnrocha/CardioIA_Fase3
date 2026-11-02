@@ -1,0 +1,56 @@
+{
+  "dataset": {
+    "total_janelas": 600,
+    "passos_por_janela_s": 60,
+    "classe_0_normal": 300,
+    "classe_1_anomalia": 300
+  },
+  "estatisticas_spiking_lif": {
+    "media_spikes_por_janela": 9.91,
+    "esparsidade_temporal_pct": 94.49
+  },
+  "modelos": {
+    "Regressão Logística (Tradicional)": {
+      "acuracia_teste": 97.33,
+      "acuracia_cv_5fold": 96.5,
+      "precisao": 96.1,
+      "recall_sensibilidade": 98.67,
+      "f1_score": 97.37,
+      "roc_auc": 99.54,
+      "falsos_negativos": 1,
+      "falsos_positivos": 3,
+      "latencia_inferencia_us": 24.86,
+      "operacoes_equivalentes": 420,
+      "energia_estimada_edge_uj": 1.85,
+      "relatorio_sklearn": "                       precision    recall  f1-score   support\n\n Baixo Risco (Normal)       0.99      0.96      0.97        75\nAlto Risco (Anomalia)       0.96      0.99      0.97        75\n\n             accuracy                           0.97       150\n            macro avg       0.97      0.97      0.97       150\n         weighted avg       0.97      0.97      0.97       150\n"
+    },
+    "Rede Neuromórfica LIF (Spiking)": {
+      "acuracia_teste": 95.33,
+      "acuracia_cv_5fold": 97.17,
+      "precisao": 98.57,
+      "recall_sensibilidade": 92.0,
+      "f1_score": 95.17,
+      "roc_auc": 99.75,
+      "falsos_negativos": 6,
+      "falsos_positivos": 1,
+      "latencia_inferencia_us": 19.87,
+      "operacoes_equivalentes": 85,
+      "energia_estimada_edge_uj": 0.24,
+      "relatorio_sklearn": "                       precision    recall  f1-score   support\n\n Baixo Risco (Normal)       0.93      0.99      0.95        75\nAlto Risco (Anomalia)       0.99      0.92      0.95        75\n\n             accuracy                           0.95       150\n            macro avg       0.96      0.95      0.95       150\n         weighted avg       0.96      0.95      0.95       150\n"
+    },
+    "Rede Neuromórfica FHN (Biofísica)": {
+      "acuracia_teste": 85.33,
+      "acuracia_cv_5fold": 89.17,
+      "precisao": 83.54,
+      "recall_sensibilidade": 88.0,
+      "f1_score": 85.71,
+      "roc_auc": 95.66,
+      "falsos_negativos": 9,
+      "falsos_positivos": 13,
+      "latencia_inferencia_us": 25.94,
+      "operacoes_equivalentes": 140,
+      "energia_estimada_edge_uj": 0.41,
+      "relatorio_sklearn": "                       precision    recall  f1-score   support\n\n Baixo Risco (Normal)       0.87      0.83      0.85        75\nAlto Risco (Anomalia)       0.84      0.88      0.86        75\n\n             accuracy                           0.85       150\n            macro avg       0.85      0.85      0.85       150\n         weighted avg       0.85      0.85      0.85       150\n"
+    }
+  }
+}

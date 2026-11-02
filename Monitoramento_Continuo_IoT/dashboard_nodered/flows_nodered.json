@@ -1,0 +1,478 @@
+[
+  {
+    "id": "tab_cardioia_fase3",
+    "type": "tab",
+    "label": "CardioIA - Monitoramento Contínuo IoT (Fase 3)",
+    "disabled": false,
+    "info": "Fluxo Node-RED oficial do projeto CardioIA (Fase 3 - Parte 2) - Grupo Data Health Solutions (FIAP)."
+  },
+  {
+    "id": "mqtt_broker_hivemq",
+    "type": "mqtt-broker",
+    "name": "HiveMQ Public Broker",
+    "broker": "broker.hivemq.com",
+    "port": "1883",
+    "clientid": "",
+    "autoConnect": true,
+    "usetls": false,
+    "protocolVersion": "4",
+    "keepalive": "60",
+    "cleansession": true,
+    "autoUnsubscribe": true
+  },
+  {
+    "id": "ui_tab_cardioia",
+    "type": "ui_tab",
+    "name": "CardioIA - UTI Digital & Telemetria IoT",
+    "icon": "fa-heartbeat",
+    "order": 1,
+    "disabled": false,
+    "hidden": false
+  },
+  {
+    "id": "ui_base_cardioia",
+    "type": "ui_base",
+    "theme": {
+      "name": "theme-dark",
+      "lightTheme": {
+        "default": "#0094CE",
+        "baseColor": "#c8102e",
+        "baseFont": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif",
+        "edited": true
+      },
+      "darkTheme": {
+        "default": "#097479",
+        "baseColor": "#e11d48",
+        "baseFont": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif",
+        "edited": true
+      },
+      "customTheme": {
+        "name": "CardioIA Dark",
+        "default": "#4B7930",
+        "baseColor": "#e11d48",
+        "baseFont": "-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,Oxygen-Sans,Ubuntu,Cantarell,Helvetica Neue,sans-serif"
+      },
+      "angularTheme": {
+        "primary": "indigo",
+        "accents": "pink",
+        "warn": "red",
+        "background": "grey",
+        "palette": "dark"
+      }
+    },
+    "site": {
+      "name": "CardioIA - Monitoramento Contínuo IoT (FIAP)",
+      "hideToolbar": "false",
+      "allowSwipe": "false",
+      "lockMenu": "false",
+      "allowTempTheme": "true",
+      "dateFormat": "DD/MM/YYYY",
+      "sizes": {
+        "sx": 48,
+        "sy": 48,
+        "gx": 6,
+        "gy": 6,
+        "cx": 6,
+        "cy": 6,
+        "px": 0,
+        "py": 0
+      }
+    }
+  },
+  {
+    "id": "ui_group_alerta",
+    "type": "ui_group",
+    "name": "1. Painel de Triagem & Alerta Clínico (Edge/Fog)",
+    "tab": "ui_tab_cardioia",
+    "order": 1,
+    "disp": true,
+    "width": "12",
+    "collapse": false
+  },
+  {
+    "id": "ui_group_gauges",
+    "type": "ui_group",
+    "name": "2. Medidores Instantâneos (Sinais Vitais)",
+    "tab": "ui_tab_cardioia",
+    "order": 2,
+    "disp": true,
+    "width": "12",
+    "collapse": false
+  },
+  {
+    "id": "ui_group_charts",
+    "type": "ui_group",
+    "name": "3. Séries Temporais em Tempo Real (BPM & Temperatura)",
+    "tab": "ui_tab_cardioia",
+    "order": 3,
+    "disp": true,
+    "width": "12",
+    "collapse": false
+  },
+  {
+    "id": "mqtt_in_telemetria",
+    "type": "mqtt in",
+    "z": "tab_cardioia_fase3",
+    "name": "MQTT In: cardioia/fase3/telemetria",
+    "topic": "cardioia/fase3/telemetria",
+    "qos": "0",
+    "datatype": "json",
+    "broker": "mqtt_broker_hivemq",
+    "nl": false,
+    "rap": true,
+    "rh": 0,
+    "inputs": 0,
+    "x": 180,
+    "y": 140,
+    "wires": [
+      [
+        "fn_processar_sinais"
+      ]
+    ]
+  },
+  {
+    "id": "inject_normal",
+    "type": "inject",
+    "z": "tab_cardioia_fase3",
+    "name": "Simular Sinais Normais (76 BPM / 36.6°C)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{\"paciente_id\":\"PAC-001\",\"paciente\":\"Ana Beatriz Souza\",\"seq\":101,\"timestamp_ms\":303000,\"temperatura_c\":36.6,\"umidade_pct\":55.0,\"bpm\":76,\"aceleracao_g\":1.05,\"em_movimento\":true,\"alerta_critico\":false,\"nivel_risco\":\"BAIXO\",\"diagnostico_borda\":\"SINAIS_ESTAVEIS\",\"origem_envio\":\"TEMPO_REAL\"}",
+    "payloadType": "json",
+    "x": 200,
+    "y": 240,
+    "wires": [
+      [
+        "fn_processar_sinais"
+      ]
+    ]
+  },
+  {
+    "id": "inject_alerta",
+    "type": "inject",
+    "z": "tab_cardioia_fase3",
+    "name": "Simular Alerta Crítico (138 BPM / 38.7°C)",
+    "props": [
+      {
+        "p": "payload"
+      }
+    ],
+    "repeat": "",
+    "crontab": "",
+    "once": false,
+    "onceDelay": 0.1,
+    "topic": "",
+    "payload": "{\"paciente_id\":\"PAC-001\",\"paciente\":\"Ana Beatriz Souza\",\"seq\":102,\"timestamp_ms\":306000,\"temperatura_c\":38.7,\"umidade_pct\":64.5,\"bpm\":138,\"aceleracao_g\":1.00,\"em_movimento\":false,\"alerta_critico\":true,\"nivel_risco\":\"CRITICO\",\"diagnostico_borda\":\"ALERTA_COMBINADO_TAQUICARDIA_E_FEBRE\",\"origem_envio\":\"TEMPO_REAL\"}",
+    "payloadType": "json",
+    "x": 200,
+    "y": 300,
+    "wires": [
+      [
+        "fn_processar_sinais"
+      ]
+    ]
+  },
+  {
+    "id": "fn_processar_sinais",
+    "type": "function",
+    "z": "tab_cardioia_fase3",
+    "name": "Processador Fog & Motor de Alertas",
+    "func": "const d = typeof msg.payload === 'string' ? JSON.parse(msg.payload) : msg.payload;\n\nconst bpm = Number(d.bpm || 75);\nconst temp = Number(d.temperatura_c || 36.5);\nconst umid = Number(d.umidade_pct || 55.0);\nconst accel = Number(d.aceleracao_g || 1.0);\nconst mov = Boolean(d.em_movimento !== undefined ? d.em_movimento : true);\n\n// Avaliação de limites clínicos definidos pelo grupo\nconst motivos = [];\nif (bpm > 120) motivos.push(`Taquicardia (${bpm} BPM > 120)`);\nif (bpm < 50) motivos.push(`Bradicardia (${bpm} BPM < 50)`);\nif (temp > 38.0) motivos.push(`Febre/Hipertermia (${temp.toFixed(1)} °C > 38°C)`);\nif (temp < 35.0) motivos.push(`Hipotermia (${temp.toFixed(1)} °C < 35°C)`);\nif (!mov && (bpm > 105 || bpm < 55)) motivos.push('Ausência de Movimento com Alteração Cardíaca');\n\nconst emAlerta = Boolean(d.alerta_critico) || motivos.length > 0;\nconst textoMotivo = motivos.length > 0 ? motivos.join(' + ') : (d.diagnostico_borda || 'SINAIS_ESTAVEIS');\n\nconst msgBpm = { payload: bpm, topic: 'Batimentos (BPM)' };\nconst msgTemp = { payload: temp, topic: 'Temperatura (°C)' };\nconst msgUmid = { payload: umid, topic: 'Umidade (%)' };\nconst msgAccel = { payload: accel, topic: 'Aceleração (G)' };\nconst msgPaciente = { payload: `${d.paciente || 'Ana Beatriz Souza'} (${d.paciente_id || 'PAC-001'}) | Origem: ${d.origem_envio || 'TEMPO_REAL'}` };\nconst msgMovimento = { payload: mov ? 'EM MOVIMENTO (Ativo)' : 'PARADO / IMÓVEL (Atenção)' };\n\nconst msgLedTemplate = {\n    payload: {\n        alerta: emAlerta,\n        titulo: emAlerta ? 'ALERTA CLÍNICO CRÍTICO ATIVO' : 'MONITORAMENTO NORMAL — SINAIS ESTÁVEIS',\n        detalhe: textoMotivo,\n        bpm: bpm,\n        temp: temp.toFixed(1),\n        umid: umid.toFixed(1),\n        mov: mov ? 'Ativo' : 'Imóvel',\n        origem: d.origem_envio || 'TEMPO_REAL',\n        seq: d.seq || 1\n    }\n};\n\nreturn [msgBpm, msgTemp, msgUmid, msgAccel, msgPaciente, msgMovimento, msgLedTemplate];",
+    "outputs": 7,
+    "timeout": "",
+    "noerr": 0,
+    "initialize": "",
+    "finalize": "",
+    "libs": [],
+    "x": 520,
+    "y": 200,
+    "wires": [
+      [
+        "gauge_bpm",
+        "chart_bpm"
+      ],
+      [
+        "gauge_temp",
+        "chart_temp"
+      ],
+      [
+        "gauge_umid"
+      ],
+      [
+        "gauge_accel"
+      ],
+      [
+        "text_paciente"
+      ],
+      [
+        "text_movimento"
+      ],
+      [
+        "template_led_alerta"
+      ]
+    ]
+  },
+  {
+    "id": "template_led_alerta",
+    "type": "ui_template",
+    "z": "tab_cardioia_fase3",
+    "group": "ui_group_alerta",
+    "name": "Indicador Visual LED Virtual de Alerta",
+    "order": 1,
+    "width": "12",
+    "height": "3",
+    "format": "<div style=\"display:flex;align-items:center;justify-content:space-between;padding:14px 20px;border-radius:10px;background:{{msg.payload.alerta ? 'linear-gradient(90deg,#7f1d1d,#991b1b)' : 'linear-gradient(90deg,#064e3b,#065f46)'}};border:2px solid {{msg.payload.alerta ? '#ef4444' : '#10b981'}};color:#fff;font-family:sans-serif;\">\n  <div style=\"display:flex;align-items:center;gap:16px;\">\n    <div style=\"width:28px;height:28px;border-radius:50%;background:{{msg.payload.alerta ? '#ff2e2e' : '#10b981'}};box-shadow:0 0 18px {{msg.payload.alerta ? '#ff2e2e' : '#10b981'}};\"></div>\n    <div>\n      <div style=\"font-size:18px;font-weight:700;letter-spacing:0.5px;\">{{msg.payload.titulo || 'AGUARDANDO TELEMETRIA MQTT...'}}</div>\n      <div style=\"font-size:14px;opacity:0.92;margin-top:4px;\">Diagnóstico de Borda: <strong>{{msg.payload.detalhe || 'Conectado ao broker.hivemq.com'}}</strong></div>\n    </div>\n  </div>\n  <div style=\"text-align:right;font-size:13px;opacity:0.9;\">\n    <div>Pacote #{{msg.payload.seq || 0}} | Modo: <strong>{{msg.payload.origem || 'MQTT'}}</strong></div>\n    <div style=\"margin-top:4px;\">Limites: BPM &gt; 120 | Temp &gt; 38.0 °C</div>\n  </div>\n</div>",
+    "storeOutMessages": true,
+    "fwdInMessages": true,
+    "resendOnRefresh": true,
+    "templateScope": "local",
+    "className": "",
+    "x": 850,
+    "y": 360,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "text_paciente",
+    "type": "ui_text",
+    "z": "tab_cardioia_fase3",
+    "group": "ui_group_alerta",
+    "order": 2,
+    "width": "6",
+    "height": "1",
+    "name": "Paciente Monitorado",
+    "label": "Paciente:",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 820,
+    "y": 280,
+    "wires": []
+  },
+  {
+    "id": "text_movimento",
+    "type": "ui_text",
+    "z": "tab_cardioia_fase3",
+    "group": "ui_group_alerta",
+    "order": 3,
+    "width": "6",
+    "height": "1",
+    "name": "Status Movimento (MPU6050)",
+    "label": "Atividade Física:",
+    "format": "{{msg.payload}}",
+    "layout": "row-spread",
+    "className": "",
+    "x": 840,
+    "y": 320,
+    "wires": []
+  },
+  {
+    "id": "gauge_bpm",
+    "type": "ui_gauge",
+    "z": "tab_cardioia_fase3",
+    "name": "Medidor BPM",
+    "group": "ui_group_gauges",
+    "order": 1,
+    "width": "3",
+    "height": "4",
+    "gtype": "gage",
+    "title": "Batimentos Cardíacos",
+    "label": "BPM",
+    "format": "{{value}}",
+    "min": 40,
+    "max": 180,
+    "colors": [
+      "#10b981",
+      "#f59e0b",
+      "#ef4444"
+    ],
+    "seg1": "100",
+    "seg2": "120",
+    "diff": false,
+    "className": "",
+    "x": 800,
+    "y": 80,
+    "wires": []
+  },
+  {
+    "id": "gauge_temp",
+    "type": "ui_gauge",
+    "z": "tab_cardioia_fase3",
+    "name": "Medidor Temperatura",
+    "group": "ui_group_gauges",
+    "order": 2,
+    "width": "3",
+    "height": "4",
+    "gtype": "gage",
+    "title": "Temperatura Corporal (DHT22)",
+    "label": "°C",
+    "format": "{{value | number:1}}",
+    "min": 34,
+    "max": 41,
+    "colors": [
+      "#3b82f6",
+      "#10b981",
+      "#ef4444"
+    ],
+    "seg1": "37.5",
+    "seg2": "38.0",
+    "diff": false,
+    "className": "",
+    "x": 820,
+    "y": 140,
+    "wires": []
+  },
+  {
+    "id": "gauge_umid",
+    "type": "ui_gauge",
+    "z": "tab_cardioia_fase3",
+    "name": "Medidor Umidade",
+    "group": "ui_group_gauges",
+    "order": 3,
+    "width": "3",
+    "height": "4",
+    "gtype": "donut",
+    "title": "Umidade Relativa (DHT22)",
+    "label": "%",
+    "format": "{{value | number:1}}",
+    "min": 0,
+    "max": 100,
+    "colors": [
+      "#06b6d4",
+      "#10b981",
+      "#3b82f6"
+    ],
+    "seg1": "40",
+    "seg2": "70",
+    "diff": false,
+    "className": "",
+    "x": 810,
+    "y": 200,
+    "wires": []
+  },
+  {
+    "id": "gauge_accel",
+    "type": "ui_gauge",
+    "z": "tab_cardioia_fase3",
+    "name": "Medidor Aceleração",
+    "group": "ui_group_gauges",
+    "order": 4,
+    "width": "3",
+    "height": "4",
+    "gtype": "compass",
+    "title": "Acelerômetro (MPU6050)",
+    "label": "G",
+    "format": "{{value | number:2}}",
+    "min": 0,
+    "max": 2.5,
+    "colors": [
+      "#10b981",
+      "#f59e0b",
+      "#ef4444"
+    ],
+    "seg1": "1.3",
+    "seg2": "1.8",
+    "diff": false,
+    "className": "",
+    "x": 820,
+    "y": 240,
+    "wires": []
+  },
+  {
+    "id": "chart_bpm",
+    "type": "ui_chart",
+    "z": "tab_cardioia_fase3",
+    "name": "Gráfico Série Temporal BPM",
+    "group": "ui_group_charts",
+    "order": 1,
+    "width": "6",
+    "height": "5",
+    "label": "Evolução de Batimentos Cardíacos (BPM)",
+    "chartType": "line",
+    "legend": "true",
+    "xformat": "HH:mm:ss",
+    "interpolate": "linear",
+    "nodata": "Aguardando leituras de BPM via MQTT...",
+    "dot": true,
+    "ymin": "40",
+    "ymax": "170",
+    "removeOlder": "10",
+    "removeOlderPoints": "50",
+    "removeOlderUnit": "60",
+    "cutout": 0,
+    "useOneColor": false,
+    "useUTC": false,
+    "colors": [
+      "#e11d48",
+      "#fb7185",
+      "#f43f5e",
+      "#10b981",
+      "#3b82f6",
+      "#f59e0b",
+      "#8b5cf6",
+      "#ec4899",
+      "#6366f1"
+    ],
+    "outputs": 1,
+    "useDifferentColor": false,
+    "className": "",
+    "x": 1060,
+    "y": 80,
+    "wires": [
+      []
+    ]
+  },
+  {
+    "id": "chart_temp",
+    "type": "ui_chart",
+    "z": "tab_cardioia_fase3",
+    "name": "Gráfico Série Temporal Temperatura",
+    "group": "ui_group_charts",
+    "order": 2,
+    "width": "6",
+    "height": "5",
+    "label": "Evolução de Temperatura Corporal (°C)",
+    "chartType": "line",
+    "legend": "true",
+    "xformat": "HH:mm:ss",
+    "interpolate": "linear",
+    "nodata": "Aguardando leituras do DHT22 via MQTT...",
+    "dot": true,
+    "ymin": "35",
+    "ymax": "40.5",
+    "removeOlder": "10",
+    "removeOlderPoints": "50",
+    "removeOlderUnit": "60",
+    "cutout": 0,
+    "useOneColor": false,
+    "useUTC": false,
+    "colors": [
+      "#f59e0b",
+      "#3b82f6",
+      "#10b981",
+      "#ef4444",
+      "#8b5cf6",
+      "#ec4899",
+      "#06b6d4",
+      "#84cc16",
+      "#f97316"
+    ],
+    "outputs": 1,
+    "useDifferentColor": false,
+    "className": "",
+    "x": 1070,
+    "y": 140,
+    "wires": [
+      []
+    ]
+  }
+]

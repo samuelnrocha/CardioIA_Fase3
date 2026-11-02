@@ -1,0 +1,96 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Alertas Clínicos CardioIA",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "gnetId": null,
+  "graphTooltip": 1,
+  "id": null,
+  "panels": [
+    {
+      "title": "Status de Alerta Clínico (Edge/Fog)",
+      "type": "stat",
+      "gridPos": { "h": 4, "w": 24, "x": 0, "y": 0 },
+      "targets": [
+        { "topic": "cardioia/fase3/telemetria", "refId": "A" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "mappings": [
+            { "options": { "false": { "color": "green", "text": "ESTÁVEL (NORMAL)" }, "true": { "color": "red", "text": "ALERTA CRÍTICO ATIVO" } }, "type": "value" }
+          ]
+        }
+      }
+    },
+    {
+      "title": "Batimentos Cardíacos (BPM)",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 8, "x": 0, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 40,
+          "max": 180,
+          "unit": "bpm",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "red", "value": 120 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Temperatura Corporal (DHT22)",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 8, "x": 8, "y": 4 },
+      "fieldConfig": {
+        "defaults": {
+          "min": 34,
+          "max": 41,
+          "unit": "celsius",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "green", "value": 35.5 },
+              { "color": "red", "value": 38.0 }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "title": "Umidade Relativa (%)",
+      "type": "gauge",
+      "gridPos": { "h": 6, "w": 8, "x": 16, "y": 4 },
+      "fieldConfig": {
+        "defaults": { "min": 0, "max": 100, "unit": "percent" }
+      }
+    },
+    {
+      "title": "Série Temporal: Batimentos Cardíacos (BPM) e Temperatura (°C)",
+      "type": "timeseries",
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 10 }
+    }
+  ],
+  "schemaVersion": 38,
+  "style": "dark",
+  "tags": ["cardioia", "fiap", "iot", "mqtt", "saude"],
+  "time": { "from": "now-15m", "to": "now" },
+  "title": "CardioIA - Monitoramento Contínuo IoT (Grafana Cloud)",
+  "uid": "cardioia-fase3-iot",
+  "version": 1
+}
