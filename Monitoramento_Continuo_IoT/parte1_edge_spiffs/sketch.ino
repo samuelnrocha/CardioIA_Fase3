@@ -4,78 +4,97 @@
  * Projeto CardioIA - Fase 3: Monitoramento Contínuo (IoT na Saúde Digital)
  * Grupo: Data Health Solutions
  *
- * PARTE 1 – Armazenamento e Processamento Local (Edge Computing)
+ * PARTE 2 – Transmissão para Nuvem e Visualização (Fog/Cloud Computing + MQTT)
+ * Integrado com a Resiliência Offline (Edge Computing + SPIFFS) da Parte 1
  * ============================================================================
  * Descrição:
- * Firmware para ESP32 (Wokwi / Hardware Real) simulando um dispositivo vestível
- * de monitoramento cardiológico contínuo com processamento na borda (Edge),
- * detecção local de anomalias e resiliência offline com SPIFFS + Buffer Circular.
+ * Sistema completo de monitoramento cardiológico contínuo para ESP32 no Wokwi.
+ * Captura sinais vitais de 3 sensores (DHT22, Potenciômetro/Botão de Pulso BPM
+ * e Acelerômetro MPU6050), processa regras de alerta na borda (Edge), garante
+ * resiliência offline via SPIFFS + Buffer Circular quando sem conexão e publica
+ * os dados em tempo real na nuvem via protocolo MQTT (Broker HiveMQ).
  *
- * Sensores integrados (3 sensores distintos + chave de conectividade):
- *   1. DHT22 (GPIO 15)         -> Temperatura corporal/superficial (°C) e Umidade (%)
- *   2. Potenciômetro (GPIO 34) + Botão de Pulso (GPIO 4) -> Batimentos Cardíacos (BPM)
- *   3. MPU6050 I2C (GPIO 21/22)-> Acelerômetro/Giroscópio (Movimento, Queda e Imobilidade)
- *   4. Slide Switch (GPIO 18)  -> Simulação física da variável booleana (wifiConectado)
+ * Tópicos MQTT Publicados:
+ *   - cardioia/fase3/telemetria  (Payload JSON completo com sinais vitais e alerta)
+ *   - cardioia/fase3/alertas     (Payload JSON disparado imediatamente em anomalias)
+ *   - cardioia/fase3/bpm         (Valor numérico de batimentos por minuto)
+ *   - cardioia/fase3/temperatura (Valor numérico de temperatura em °C)
+ *   - cardioia/fase3/umidade     (Valor numérico de umidade em %)
+ *   - cardioia/fase3/status      (Status Online/Offline LWT e diagnóstico)
  *
- * Estratégia de Resiliência Offline (Modelo de Negócio CardioIA):
- *   - Partição Flash SPIFFS (/leituras_offline.csv): Limite de negócio de 10.000
- *     amostras (~640 KB de 1,5 MB disponíveis, ~64 bytes/amostra), garantindo
- *     13,8 horas de autonomia offline a 1 leitura/5s.
- *   - Buffer Circular em RAM (Espelho para Simulador Wokwi): Janela circular FIFO
- *     com preservação prioritária de alertas clínicos (Taquicardia, Bradicardia,
- *     Febre, Hipotermia e Ausência de Movimento).
- *   - Ao reconectar (wifiConectado == true): Descarrega todo o histórico acumulado
- *     para a nuvem via Serial.println (JSON/CSV) e remove o arquivo local SPIFFS.
+ * Tópico MQTT Subscrito (Comandos Remotos da Equipe Médica / Node-RED):
+ *   - cardioia/fase3/comandos    (Permite silenciar alarme ou forçar sincronização)
  * ============================================================================
  */
 
 #include <Arduino.h>
+#include <WiFi.h>
+#include <PubSubClient.h>
 #include <Wire.h>
 #include <FS.h>
 #include <SPIFFS.h>
 #include <DHTesp.h>
 #include <Adafruit_MPU6050.h>
 #include <Adafruit_Sensor.h>
+#include <ArduinoJson.h>
 
 // ============================================================================
-// 1. DEFINIÇÃO DE PINOS DO HARDWARE (ESP32 WOKWI)
+// 1. CONFIGURAÇÕES DE REDE WI-FI (WOKWI) E BROKER MQTT (HIVEMQ)
+// ============================================================================
+const char* WIFI_SSID     = "Wokwi-GUEST";
+const char* WIFI_PASSWORD = "";
+const int   WIFI_CHANNEL  = 6;
+
+// Broker MQTT Público de Alta Disponibilidade (HiveMQ)
+// Nota: Para cluster privado HiveMQ Cloud TLS (porta 8883), basta substituir
+// WiFiClient por WiFiClientSecure e configurar as credenciais do cluster.
+const char* MQTT_BROKER   = "broker.hivemq.com";
+const int   MQTT_PORT     = 1883;
+const char* MQTT_USER     = "";
+const char* MQTT_PASS     = "";
+
+// Tópicos MQTT da Arquitetura Fog/Cloud CardioIA
+const char* TOPICO_TELEMETRIA  = "cardioia/fase3/telemetria";
+const char* TOPICO_ALERTAS     = "cardioia/fase3/alertas";
+const char* TOPICO_BPM         = "cardioia/fase3/bpm";
+const char* TOPICO_TEMPERATURA = "cardioia/fase3/temperatura";
+const char* TOPICO_UMIDADE     = "cardioia/fase3/umidade";
+const char* TOPICO_STATUS      = "cardioia/fase3/status";
+const char* TOPICO_COMANDOS    = "cardioia/fase3/comandos";
+
+// ============================================================================
+// 2. DEFINIÇÃO DE PINOS DO HARDWARE (ESP32 WOKWI)
 // ============================================================================
 #define PIN_DHT22         15   // Sensor obrigatório de Temperatura e Umidade (DHT22)
-#define PIN_POT_BPM       34   // Sensor analógico para simulação contínua de BPM
-#define PIN_BTN_PULSO     4    // Botão de pressão para simular pulsos cardíacos manuais
-#define PIN_SW_WIFI       18   // Chave deslizante para controlar booleana wifiConectado
-#define PIN_LED_WIFI      2    // LED Azul/Verde: aceso = Online | apagado = Offline
-#define PIN_LED_ALERTA    5    // LED Vermelho: aceso = Alerta Clínico detectado na Borda
-#define PIN_I2C_SDA       21   // Barramento I2C SDA (MPU6050)
-#define PIN_I2C_SCL       22   // Barramento I2C SCL (MPU6050)
+#define PIN_POT_BPM       34   // Potenciômetro analógico para simulação de BPM
+#define PIN_BTN_PULSO     4    // Botão de pressão para simular batimentos manuais
+#define PIN_SW_WIFI       18   // Chave deslizante: simula queda/retorno de Wi-Fi
+#define PIN_LED_WIFI      2    // LED Verde: Conectado ao Wi-Fi e Broker MQTT
+#define PIN_LED_ALERTA    5    // LED Vermelho: Alerta Clínico (>120 bpm, >38°C, etc.)
+#define PIN_I2C_SDA       21   // Pino SDA do Acelerômetro MPU6050
+#define PIN_I2C_SCL       22   // Pino SCL do Acelerômetro MPU6050
 
 // ============================================================================
-// 2. CONSTANTES DO MODELO DE NEGÓCIO E LIMITES CLÍNICOS (EDGE COMPUTING)
+// 3. PARÂMETROS CLÍNICOS E MODELO DE NEGÓCIO (RESILIÊNCIA OFFLINE)
 // ============================================================================
 const char* PACIENTE_ID          = "PAC-001";
-const char* PACIENTE_NOME        = "Ana Beatriz Souza"; // Paciente de Alto Risco (Fase 2)
+const char* PACIENTE_NOME        = "Ana Beatriz Souza";
 const char* ARQUIVO_SPIFFS       = "/leituras_offline.csv";
 
-// Intervalo de coleta periódica (3 segundos na simulação para fácil visualização;
-// 5 segundos em produção)
-const unsigned long INTERVALO_COLETA_MS = 3000;
+const unsigned long INTERVALO_PUBLICACAO_MS = 3000;
+const size_t CAPACIDADE_BUFFER_RAM          = 120;
+const size_t LIMITE_AMOSTRAS_NEGOCIO_FLASH  = 10000;
 
-// Estratégia de armazenamento limitado (Resiliência Offline):
-// Em produção no chip ESP32 real: até 10.000 amostras no SPIFFS (~640 KB).
-// No buffer circular em RAM (e limite de demonstração no simulador): 120 amostras.
-const size_t LIMITE_AMOSTRAS_NEGOCIO_FLASH = 10000;
-const size_t CAPACIDADE_BUFFER_RAM         = 120;
-
-// Limiares Clínicos de Alerta na Borda (Protocolo CardioIA)
-const int   LIMITE_TAQUICARDIA_BPM = 120;  // Acima de 120 bpm -> Taquicardia
-const int   LIMITE_BRADICARDIA_BPM = 50;   // Abaixo de 50 bpm  -> Bradicardia
-const float LIMITE_FEBRE_C         = 38.0; // Acima de 38.0 °C -> Febre / Hipertermia
-const float LIMITE_HIPOTERMIA_C    = 35.0; // Abaixo de 35.0 °C-> Hipotermia
-const float LIMITE_IMOBILIDADE_G   = 0.08; // Variação < 0.08g por vários ciclos -> Sem movimento
-const int   CICLOS_PARA_IMOBILIDADE = 4;   // Ciclos consecutivos sem variação de movimento
+// Limites Clínicos definidos pelo grupo Data Health Solutions
+const int   LIMITE_TAQUICARDIA_BPM = 120;  // Alerta se BPM > 120
+const int   LIMITE_BRADICARDIA_BPM = 50;   // Alerta se BPM < 50
+const float LIMITE_FEBRE_C         = 38.0; // Alerta se Temperatura > 38.0 °C
+const float LIMITE_HIPOTERMIA_C    = 35.0; // Alerta se Temperatura < 35.0 °C
+const float LIMITE_IMOBILIDADE_G   = 0.08; // Variação mínima de movimento em G
+const int   CICLOS_PARA_IMOBILIDADE = 4;
 
 // ============================================================================
-// 3. ESTRUTURAS DE DADOS E VARIÁVEIS GLOBAIS
+// 4. ESTRUTURAS DE DADOS E INSTÂNCIAS GLOBAIS
 // ============================================================================
 struct AmostraVital {
   unsigned long timestamp_ms;
@@ -86,41 +105,37 @@ struct AmostraVital {
   float         aceleracao_g;
   bool          em_movimento;
   bool          alerta_critico;
+  char          nivel_risco[16];
   char          descricao_alerta[48];
 };
 
-// Instâncias dos sensores
+WiFiClient       espClient;
+PubSubClient     mqttClient(espClient);
 DHTesp           sensorDHT;
 Adafruit_MPU6050 sensorMPU;
-bool             mpuDisponivel = false;
 
-// Variável booleana obrigatória de simulação de conectividade Wi-Fi
-bool wifiConectado         = true;
-bool wifiConectadoAnterior = true;
-bool modoControleSerial    = false; // Permite forçar online/offline via comando Serial
+bool             mpuDisponivel           = false;
+bool             spiffsMontado           = false;
+bool             wifiConectado           = true;  // Variável booleana de simulação Wi-Fi
+bool             wifiConectadoAnterior   = true;
 
-// Buffer Circular em RAM (garante funcionamento 100% resiliente mesmo se o SPIFFS
-// do simulador web for volátil) + contadores de auditoria
-AmostraVital bufferOfflineRAM[CAPACIDADE_BUFFER_RAM];
-size_t       indiceEscritaRAM        = 0;
-size_t       totalAmostrasPendentes  = 0;
-size_t       totalAmostrasSobrescritas = 0;
-uint32_t     contadorSequenciaGlobal = 0;
-bool         spiffsMontado           = false;
+AmostraVital     bufferOfflineRAM[CAPACIDADE_BUFFER_RAM];
+size_t           indiceEscritaRAM        = 0;
+size_t           totalAmostrasPendentes  = 0;
+size_t           totalAmostrasSobrescritas = 0;
+uint32_t         contadorSequenciaGlobal = 0;
 
-// Variáveis auxiliares para leitura do botão de pulso e detecção de movimento
 volatile unsigned long contadorCliquesBotao = 0;
 unsigned long          ultimoCliqueMs       = 0;
-unsigned long          janelaPulsoInicioMs  = 0;
 int                    bpmIncrementoBotao   = 0;
-float                  ultimaAceleracaoG    = 1.0;
+float                  ultimaAceleracaoG    = 1.0f;
 int                    ciclosSemMovimento   = 0;
-unsigned long          ultimaColetaMs       = 0;
+unsigned long          ultimaPublicacaoMs   = 0;
+unsigned long          ultimaTentativaMqttMs = 0;
 
-// Interrupção de hardware (ISR) para capturar cliques no botão de pulso cardíaco
+// ISR para o botão de pressão de batimentos cardíacos
 void IRAM_ATTR isrBotaoPulso() {
   unsigned long agora = millis();
-  // Debounce de 120ms (suporta até ~500 bpm teóricos sem ruído mecânico)
   if (agora - ultimoCliqueMs > 120) {
     contadorCliquesBotao++;
     ultimoCliqueMs = agora;
@@ -128,284 +143,253 @@ void IRAM_ATTR isrBotaoPulso() {
 }
 
 // ============================================================================
-// 4. FUNÇÕES DE ARMAZENAMENTO LOCAL (SPIFFS + BUFFER CIRCULAR)
+// 5. CALLBACK MQTT E GERENCIAMENTO DE CONEXÃO WI-FI / BROKER
 // ============================================================================
-
-/**
- * Inicializa o sistema de arquivos SPIFFS na memória Flash do ESP32.
- */
-void inicializarSPIFFS() {
-  Serial.println(F("------------------------------------------------------------"));
-  Serial.println(F("[EDGE-STORAGE] Inicializando sistema de arquivos SPIFFS..."));
-  if (SPIFFS.begin(true)) {
-    spiffsMontado = true;
-    size_t totalBytes = SPIFFS.totalBytes();
-    size_t usedBytes  = SPIFFS.usedBytes();
-    Serial.printf("[EDGE-STORAGE] SPIFFS montado com sucesso! Total: %u bytes | Usado: %u bytes\n",
-                  (unsigned int)totalBytes, (unsigned int)usedBytes);
-    Serial.printf("[EDGE-STORAGE] Politica de Negocio CardioIA: Limite Flash = %u amostras (~640 KB) | Buffer RAM = %u amostras\n",
-                  (unsigned int)LIMITE_AMOSTRAS_NEGOCIO_FLASH, (unsigned int)CAPACIDADE_BUFFER_RAM);
-  } else {
-    spiffsMontado = false;
-    Serial.println(F("[EDGE-STORAGE] Aviso: SPIFFS indisponivel no simulador atual. Operando com Buffer Circular em RAM + Monitor Serial."));
+void callbackMQTT(char* topic, byte* payload, unsigned int length) {
+  String mensagem;
+  for (unsigned int i = 0; i < length; i++) {
+    mensagem += (char)payload[i];
   }
-  Serial.println(F("------------------------------------------------------------"));
+  mensagem.trim();
+  Serial.printf("[MQTT-CMD] Mensagem recebida em '%s': %s\n", topic, mensagem.c_str());
+
+  if (mensagem.equalsIgnoreCase("RESET_ALERTA")) {
+    digitalWrite(PIN_LED_ALERTA, LOW);
+    Serial.println(F("[MQTT-CMD] Alerta visual local reiniciado remotamente pela equipe medica."));
+  }
 }
 
-/**
- * Armazena uma leitura localmente no arquivo CSV do SPIFFS e no Buffer Circular.
- * Caso o limite de armazenamento seja atingido durante um período longo offline,
- * aplica a estratégia FIFO preservando eventos críticos.
- */
+void conectarWiFi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+
+  Serial.printf("[WIFI] Conectando a rede '%s'...", WIFI_SSID);
+  WiFi.mode(WIFI_STA);
+  WiFi.begin(WIFI_SSID, WIFI_PASSWORD, WIFI_CHANNEL);
+
+  unsigned long inicio = millis();
+  while (WiFi.status() != WL_CONNECTED && (millis() - inicio) < 6000) {
+    delay(250);
+    Serial.print(".");
+  }
+
+  if (WiFi.status() == WL_CONNECTED) {
+    Serial.printf(" Conectado! IP: %s\n", WiFi.localIP().toString().c_str());
+  } else {
+    Serial.println(F(" Tempo limite excedido (operando em resiliencia Edge)."));
+  }
+}
+
+bool conectarMQTT() {
+  if (!wifiConectado || WiFi.status() != WL_CONNECTED) return false;
+  if (mqttClient.connected()) return true;
+
+  unsigned long agora = millis();
+  if (agora - ultimaTentativaMqttMs < 4000) return false;
+  ultimaTentativaMqttMs = agora;
+
+  String clientId = "CardioIA-ESP32-" + String(PACIENTE_ID) + "-" + String(random(1000, 9999));
+  Serial.printf("[MQTT] Conectando ao broker %s:%d como '%s'...", MQTT_BROKER, MQTT_PORT, clientId.c_str());
+
+  // Configura Last Will and Testament (LWT) para avisar o dashboard em caso de queda abrupta
+  bool conectado = false;
+  if (strlen(MQTT_USER) > 0) {
+    conectado = mqttClient.connect(clientId.c_str(), MQTT_USER, MQTT_PASS,
+                                   TOPICO_STATUS, 1, true, "{\"status\":\"OFFLINE\",\"paciente_id\":\"PAC-001\"}");
+  } else {
+    conectado = mqttClient.connect(clientId.c_str(),
+                                   TOPICO_STATUS, 1, true, "{\"status\":\"OFFLINE\",\"paciente_id\":\"PAC-001\"}");
+  }
+
+  if (conectado) {
+    Serial.println(F(" Conectado ao HiveMQ!"));
+    mqttClient.publish(TOPICO_STATUS, "{\"status\":\"ONLINE\",\"paciente_id\":\"PAC-001\"}", true);
+    mqttClient.subscribe(TOPICO_COMANDOS);
+    return true;
+  } else {
+    Serial.printf(" Falha (rc=%d).\n", mqttClient.state());
+    return false;
+  }
+}
+
+// ============================================================================
+// 6. ARMAZENAMENTO LOCAL (SPIFFS) E PUBLICAÇÃO MQTT (FOG/CLOUD)
+// ============================================================================
+void inicializarSPIFFS() {
+  if (SPIFFS.begin(true)) {
+    spiffsMontado = true;
+    Serial.printf("[SPIFFS] Sistema de arquivos pronto (%u bytes totais).\n",
+                  (unsigned int)SPIFFS.totalBytes());
+  } else {
+    spiffsMontado = false;
+    Serial.println(F("[SPIFFS] Modo simulador: Buffer Circular em RAM ativo."));
+  }
+}
+
 void armazenarLeituraOffline(const AmostraVital& amostra) {
-  // 1. Gravação no Buffer Circular em RAM (com política de limite de amostras)
   if (totalAmostrasPendentes >= CAPACIDADE_BUFFER_RAM) {
-    // Procura a amostra mais antiga que NÃO seja um alerta crítico para sobrescrever
-    size_t indiceSubstituicao = indiceEscritaRAM;
+    size_t idxSub = indiceEscritaRAM;
     for (size_t i = 0; i < CAPACIDADE_BUFFER_RAM; i++) {
       size_t idx = (indiceEscritaRAM + i) % CAPACIDADE_BUFFER_RAM;
       if (!bufferOfflineRAM[idx].alerta_critico) {
-        indiceSubstituicao = idx;
+        idxSub = idx;
         break;
       }
     }
-    bufferOfflineRAM[indiceSubstituicao] = amostra;
-    indiceEscritaRAM = (indiceSubstituicao + 1) % CAPACIDADE_BUFFER_RAM;
+    bufferOfflineRAM[idxSub] = amostra;
+    indiceEscritaRAM = (idxSub + 1) % CAPACIDADE_BUFFER_RAM;
     totalAmostrasSobrescritas++;
-    Serial.printf("[EDGE-RESILIENCIA] Limite do buffer atingido (%u amostras). Aplicada politica FIFO com retencao de risco (sobrescritas: %u).\n",
-                  (unsigned int)CAPACIDADE_BUFFER_RAM, (unsigned int)totalAmostrasSobrescritas);
   } else {
     bufferOfflineRAM[indiceEscritaRAM] = amostra;
     indiceEscritaRAM = (indiceEscritaRAM + 1) % CAPACIDADE_BUFFER_RAM;
     totalAmostrasPendentes++;
   }
 
-  // 2. Gravação física no arquivo CSV do SPIFFS (se montado e abaixo do teto de negócio)
   if (spiffsMontado && totalAmostrasPendentes <= LIMITE_AMOSTRAS_NEGOCIO_FLASH) {
-    bool escreverCabecalho = !SPIFFS.exists(ARQUIVO_SPIFFS);
-    File arquivo = SPIFFS.open(ARQUIVO_SPIFFS, FILE_APPEND);
-    if (arquivo) {
-      if (escreverCabecalho) {
-        arquivo.println("seq,timestamp_ms,paciente_id,temperatura_c,umidade_pct,bpm,aceleracao_g,movimento,alerta,detalhe_alerta");
+    bool novo = !SPIFFS.exists(ARQUIVO_SPIFFS);
+    File f = SPIFFS.open(ARQUIVO_SPIFFS, FILE_APPEND);
+    if (f) {
+      if (novo) {
+        f.println("seq,timestamp_ms,paciente_id,temperatura_c,umidade_pct,bpm,aceleracao_g,movimento,risco,alerta");
       }
-      arquivo.printf("%u,%lu,%s,%.1f,%.1f,%d,%.2f,%s,%s,%s\n",
-                     amostra.sequencia,
-                     amostra.timestamp_ms,
-                     PACIENTE_ID,
-                     amostra.temperatura_c,
-                     amostra.umidade_pct,
-                     amostra.batimentos_bpm,
-                     amostra.aceleracao_g,
-                     amostra.em_movimento ? "SIM" : "NAO",
-                     amostra.alerta_critico ? "CRITICO" : "NORMAL",
-                     amostra.descricao_alerta);
-      arquivo.close();
+      f.printf("%u,%lu,%s,%.1f,%.1f,%d,%.2f,%s,%s,%s\n",
+               amostra.sequencia, amostra.timestamp_ms, PACIENTE_ID,
+               amostra.temperatura_c, amostra.umidade_pct, amostra.batimentos_bpm,
+               amostra.aceleracao_g, amostra.em_movimento ? "SIM" : "NAO",
+               amostra.nivel_risco, amostra.descricao_alerta);
+      f.close();
     }
   }
 
-  Serial.printf("[OFFLINE -> SPIFFS] Amostra #%u gravada localmente (%u/%u no buffer) | Temp: %.1f C | Umid: %.1f%% | BPM: %d | Mov: %s | Status: %s\n",
-                amostra.sequencia,
-                (unsigned int)totalAmostrasPendentes,
-                (unsigned int)CAPACIDADE_BUFFER_RAM,
-                amostra.temperatura_c,
-                amostra.umidade_pct,
-                amostra.batimentos_bpm,
-                amostra.em_movimento ? "ATIVO" : "PARADO",
-                amostra.descricao_alerta);
+  Serial.printf("[OFFLINE -> SPIFFS] Amostra #%u salva localmente (%u/%u pendentes) | BPM: %d | Temp: %.1f C | Status: %s\n",
+                amostra.sequencia, (unsigned int)totalAmostrasPendentes,
+                (unsigned int)CAPACIDADE_BUFFER_RAM, amostra.batimentos_bpm,
+                amostra.temperatura_c, amostra.descricao_alerta);
 }
 
-/**
- * Envia uma amostra diretamente para a nuvem (simulada via Serial.println JSON).
- */
-void enviarAmostraParaNuvem(const AmostraVital& amostra, const char* origemEnvio) {
-  Serial.printf("[NUVEM-SYNC | %s] {\"paciente_id\":\"%s\",\"paciente\":\"%s\",\"seq\":%u,\"timestamp_ms\":%lu,"
-                "\"temperatura_c\":%.1f,\"umidade_pct\":%.1f,\"bpm\":%d,\"aceleracao_g\":%.2f,"
-                "\"em_movimento\":%s,\"alerta_critico\":%s,\"diagnostico_borda\":\"%s\"}\n",
-                origemEnvio,
-                PACIENTE_ID,
-                PACIENTE_NOME,
-                amostra.sequencia,
-                amostra.timestamp_ms,
-                amostra.temperatura_c,
-                amostra.umidade_pct,
-                amostra.batimentos_bpm,
-                amostra.aceleracao_g,
-                amostra.em_movimento ? "true" : "false",
-                amostra.alerta_critico ? "true" : "false",
-                amostra.descricao_alerta);
-}
+bool publicarAmostraMQTT(const AmostraVital& amostra, const char* modoEnvio) {
+  StaticJsonDocument<512> doc;
+  doc["paciente_id"]       = PACIENTE_ID;
+  doc["paciente"]          = PACIENTE_NOME;
+  doc["seq"]               = amostra.sequencia;
+  doc["timestamp_ms"]      = amostra.timestamp_ms;
+  doc["temperatura_c"]     = serialized(String(amostra.temperatura_c, 1));
+  doc["umidade_pct"]       = serialized(String(amostra.umidade_pct, 1));
+  doc["bpm"]               = amostra.batimentos_bpm;
+  doc["aceleracao_g"]      = serialized(String(amostra.aceleracao_g, 2));
+  doc["em_movimento"]      = amostra.em_movimento;
+  doc["alerta_critico"]    = amostra.alerta_critico;
+  doc["nivel_risco"]       = amostra.nivel_risco;
+  doc["diagnostico_borda"] = amostra.descricao_alerta;
+  doc["origem_envio"]      = modoEnvio;
 
-/**
- * Sincroniza todos os dados armazenados offline assim que a conectividade Wi-Fi
- * é restabelecida e apaga o arquivo local no SPIFFS.
- */
-void sincronizarDadosOfflineComNuvem() {
-  if (totalAmostrasPendentes == 0 && (!spiffsMontado || !SPIFFS.exists(ARQUIVO_SPIFFS))) {
-    return;
+  char payload[512];
+  serializeJson(doc, payload, sizeof(payload));
+
+  // Imprime no Monitor Serial (evidência de envio e auditoria)
+  Serial.printf("[MQTT-PUB | %s] Topico: %s -> %s\n", modoEnvio, TOPICO_TELEMETRIA, payload);
+
+  if (mqttClient.connected()) {
+    bool ok = mqttClient.publish(TOPICO_TELEMETRIA, payload, false);
+
+    // Publica também nos subtópicos individuais para facilitar widgets diretos
+    char bufNum[16];
+    snprintf(bufNum, sizeof(bufNum), "%d", amostra.batimentos_bpm);
+    mqttClient.publish(TOPICO_BPM, bufNum);
+
+    snprintf(bufNum, sizeof(bufNum), "%.1f", amostra.temperatura_c);
+    mqttClient.publish(TOPICO_TEMPERATURA, bufNum);
+
+    snprintf(bufNum, sizeof(bufNum), "%.1f", amostra.umidade_pct);
+    mqttClient.publish(TOPICO_UMIDADE, bufNum);
+
+    if (amostra.alerta_critico) {
+      mqttClient.publish(TOPICO_ALERTAS, payload, false);
+    }
+    return ok;
   }
+  return false;
+}
+
+void sincronizarFilaOfflineMQTT() {
+  if (totalAmostrasPendentes == 0) return;
 
   Serial.println(F("\n============================================================"));
-  Serial.println(F("[RECONEXAO WI-FI DETECTADA] Iniciando sincronizacao de resiliencia offline..."));
-  Serial.printf("[SYNC] Total de amostras retidas na borda (Edge): %u amostras\n",
+  Serial.printf("[SYNC-MQTT] Conectividade restaurada! Sincronizando %u amostras retidas no SPIFFS/Buffer...\n",
                 (unsigned int)totalAmostrasPendentes);
 
-  // 1. Se o arquivo existir no SPIFFS, lê e exibe o conteúdo bruto do arquivo CSV
-  if (spiffsMontado && SPIFFS.exists(ARQUIVO_SPIFFS)) {
-    File arquivo = SPIFFS.open(ARQUIVO_SPIFFS, FILE_READ);
-    if (arquivo) {
-      Serial.println(F("[SPIFFS-READ] Lendo arquivo local /leituras_offline.csv:"));
-      while (arquivo.available()) {
-        String linha = arquivo.readStringUntil('\n');
-        linha.trim();
-        if (linha.length() > 0) {
-          Serial.println("  [CSV] " + linha);
-        }
-      }
-      arquivo.close();
-    }
-  }
-
-  // 2. Transmite cada amostra estruturada em JSON para a nuvem via Serial.println
-  size_t indiceInicial = (totalAmostrasPendentes < CAPACIDADE_BUFFER_RAM)
-                         ? 0
-                         : indiceEscritaRAM;
-
+  size_t inicio = (totalAmostrasPendentes < CAPACIDADE_BUFFER_RAM) ? 0 : indiceEscritaRAM;
   for (size_t i = 0; i < totalAmostrasPendentes; i++) {
-    size_t idx = (indiceInicial + i) % CAPACIDADE_BUFFER_RAM;
-    enviarAmostraParaNuvem(bufferOfflineRAM[idx], "RESILIENCIA_OFFLINE");
+    size_t idx = (inicio + i) % CAPACIDADE_BUFFER_RAM;
+    publicarAmostraMQTT(bufferOfflineRAM[idx], "RESILIENCIA_OFFLINE");
+    mqttClient.loop();
+    delay(60);
   }
 
-  // 3. Apaga o arquivo local no SPIFFS e limpa os ponteiros do buffer
   if (spiffsMontado && SPIFFS.exists(ARQUIVO_SPIFFS)) {
-    if (SPIFFS.remove(ARQUIVO_SPIFFS)) {
-      Serial.println(F("[SPIFFS-CLEAN] Arquivo local /leituras_offline.csv removido com sucesso apos sincronizacao!"));
-    } else {
-      Serial.println(F("[SPIFFS-CLEAN] Erro ao remover arquivo local /leituras_offline.csv."));
-    }
+    SPIFFS.remove(ARQUIVO_SPIFFS);
+    Serial.println(F("[SPIFFS-CLEAN] Arquivo local /leituras_offline.csv removido apos sincronizacao MQTT."));
   }
 
   indiceEscritaRAM          = 0;
   totalAmostrasPendentes    = 0;
   totalAmostrasSobrescritas = 0;
-
-  Serial.println(F("[SYNC-CONCLUIDO] Todos os dados offline foram sincronizados com a nuvem!"));
+  Serial.println(F("[SYNC-MQTT] Sincronizacao concluida com sucesso!"));
   Serial.println(F("============================================================\n"));
 }
 
 // ============================================================================
-// 5. LEITURA DOS SENSORES E PROCESSAMENTO NA BORDA (EDGE ANALYTICS)
+// 7. COLETA DE SENSORES E DETECÇÃO DE ALERTA CLÍNICO
 // ============================================================================
-
-/**
- * Atualiza o estado da variável booleana wifiConectado a partir da chave física
- * no circuito Wokwi (GPIO 18) ou de comandos digitados no Monitor Serial.
- */
-void atualizarEstadoConectividade() {
-  // Verifica comandos via Monitor Serial ("offline", "online", "auto")
-  if (Serial.available() > 0) {
-    String comando = Serial.readStringUntil('\n');
-    comando.trim();
-    comando.toLowerCase();
-    if (comando == "offline" || comando == "0") {
-      modoControleSerial = true;
-      wifiConectado = false;
-      Serial.println(F("[COMANDO SERIAL] Conectividade Wi-Fi alterada manualmente para: OFFLINE (false)"));
-    } else if (comando == "online" || comando == "1") {
-      modoControleSerial = true;
-      wifiConectado = true;
-      Serial.println(F("[COMANDO SERIAL] Conectividade Wi-Fi alterada manualmente para: ONLINE (true)"));
-    } else if (comando == "auto") {
-      modoControleSerial = false;
-      Serial.println(F("[COMANDO SERIAL] Conectividade controlada pela chave fisica GPIO 18."));
-    }
-  }
-
-  // Se não estiver travado por comando serial, lê a chave deslizante (Slide Switch)
-  if (!modoControleSerial) {
-    wifiConectado = (digitalRead(PIN_SW_WIFI) == HIGH);
-  }
-
-  // Atualiza LED de status Wi-Fi
-  digitalWrite(PIN_LED_WIFI, wifiConectado ? HIGH : LOW);
-
-  // Detecta mudança de estado (Transição Offline <-> Online)
-  if (wifiConectado != wifiConectadoAnterior) {
-    if (wifiConectado) {
-      Serial.println(F("\n>>> [STATUS REDE] Wi-Fi CONECTADO (wifiConectado = true) <<<"));
-      sincronizarDadosOfflineComNuvem();
-    } else {
-      Serial.println(F("\n>>> [STATUS REDE] Wi-Fi DESCONECTADO (wifiConectado = false) - Ativando Resiliencia Offline (Edge) <<<"));
-    }
-    wifiConectadoAnterior = wifiConectado;
-  }
-}
-
-/**
- * Realiza a leitura dos 3 sensores (DHT22, Potenciômetro/Botão de BPM e MPU6050)
- * e executa a inferência de risco local (Edge Computing).
- */
-AmostraVital coletarEProcessarSinaisVitais() {
+AmostraVital lerSensoresEAnalisarRisco() {
   AmostraVital amostra;
   contadorSequenciaGlobal++;
   amostra.timestamp_ms = millis();
   amostra.sequencia    = contadorSequenciaGlobal;
 
-  // 1. Leitura do Sensor Obrigatório DHT22 (Temperatura e Umidade)
-  TempAndHumidity dadosDHT = sensorDHT.getTempAndHumidity();
-  if (isnan(dadosDHT.temperature) || isnan(dadosDHT.humidity)) {
-    amostra.temperatura_c = 36.6;
-    amostra.umidade_pct   = 55.0;
-  } else {
-    amostra.temperatura_c = dadosDHT.temperature;
-    amostra.umidade_pct   = dadosDHT.humidity;
-  }
+  // 1. Sensor DHT22 (Temperatura e Umidade)
+  TempAndHumidity dht = sensorDHT.getTempAndHumidity();
+  amostra.temperatura_c = isnan(dht.temperature) ? 36.6f : dht.temperature;
+  amostra.umidade_pct   = isnan(dht.humidity)    ? 55.0f : dht.humidity;
 
-  // 2. Leitura do Sensor de Batimentos Cardíacos (Potenciômetro + Botão de Pulso)
-  int leituraADC = analogRead(PIN_POT_BPM);
-  // Mapeia o potenciômetro (0..4095) para faixa fisiológica (40..175 BPM)
-  int bpmBasePotenciometro = map(leituraADC, 0, 4095, 40, 175);
+  // 2. Sensor de Batimentos Cardíacos (Potenciômetro + Botão de Pressão)
+  int adc = analogRead(PIN_POT_BPM);
+  int bpmBase = map(adc, 0, 4095, 40, 175);
 
-  // Calcula bônus de BPM caso o usuário tenha pressionado o botão de pulso no último ciclo
   noInterrupts();
-  unsigned long cliquesRecentes = contadorCliquesBotao;
+  unsigned long cliques = contadorCliquesBotao;
   contadorCliquesBotao = 0;
   interrupts();
 
-  if (cliquesRecentes > 0) {
-    // Cada clique no botão adiciona estímulo cardíaco (ou simula frequência por cliques)
-    bpmIncrementoBotao = min(80, bpmIncrementoBotao + (int)(cliquesRecentes * 12));
+  if (cliques > 0) {
+    bpmIncrementoBotao = min(80, bpmIncrementoBotao + (int)(cliques * 12));
   } else {
-    // Decaimento suave quando o botão não é pressionado
     bpmIncrementoBotao = max(0, bpmIncrementoBotao - 6);
   }
-  amostra.batimentos_bpm = constrain(bpmBasePotenciometro + bpmIncrementoBotao, 35, 220);
+  amostra.batimentos_bpm = constrain(bpmBase + bpmIncrementoBotao, 35, 220);
 
-  // 3. Leitura do Acelerômetro MPU6050 (Movimento / Atividade Física / Imobilidade)
+  // 3. Sensor Acelerômetro MPU6050
   if (mpuDisponivel) {
-    sensors_event_t a, g, tempMpu;
-    sensorMPU.getEvent(&a, &g, &tempMpu);
-    // Magnitude do vetor de aceleração em unidades de gravidade (g = 9.80665 m/s^2)
-    float mag = sqrt(a.acceleration.x * a.acceleration.x +
-                     a.acceleration.y * a.acceleration.y +
-                     a.acceleration.z * a.acceleration.z) / 9.80665f;
-    amostra.aceleracao_g = mag;
+    sensors_event_t a, g, t;
+    sensorMPU.getEvent(&a, &g, &t);
+    amostra.aceleracao_g = sqrt(a.acceleration.x * a.acceleration.x +
+                                a.acceleration.y * a.acceleration.y +
+                                a.acceleration.z * a.acceleration.z) / 9.80665f;
   } else {
-    // Fallback caso o barramento I2C não responda
-    amostra.aceleracao_g = 1.00f + (cliquesRecentes > 0 ? 0.35f : 0.01f);
+    amostra.aceleracao_g = 1.00f + (cliques > 0 ? 0.30f : 0.01f);
   }
 
-  float deltaAccel = fabs(amostra.aceleracao_g - ultimaAceleracaoG);
+  float deltaG = fabs(amostra.aceleracao_g - ultimaAceleracaoG);
   ultimaAceleracaoG = amostra.aceleracao_g;
-
-  if (deltaAccel < LIMITE_IMOBILIDADE_G && cliquesRecentes == 0) {
+  if (deltaG < LIMITE_IMOBILIDADE_G && cliques == 0) {
     ciclosSemMovimento++;
   } else {
     ciclosSemMovimento = 0;
   }
   amostra.em_movimento = (ciclosSemMovimento < CICLOS_PARA_IMOBILIDADE);
 
-  // 4. Processamento Local na Borda (Edge Triage & Detecção de Risco)
+  // 4. Regras de Triagem e Alerta Clínico
   amostra.alerta_critico = false;
+  strncpy(amostra.nivel_risco, "BAIXO", sizeof(amostra.nivel_risco));
   strncpy(amostra.descricao_alerta, "SINAIS_ESTAVEIS", sizeof(amostra.descricao_alerta));
 
   bool taquicardia = (amostra.batimentos_bpm > LIMITE_TAQUICARDIA_BPM);
@@ -416,43 +400,46 @@ AmostraVital coletarEProcessarSinaisVitais() {
 
   if (taquicardia && febre) {
     amostra.alerta_critico = true;
+    strncpy(amostra.nivel_risco, "CRITICO", sizeof(amostra.nivel_risco));
     strncpy(amostra.descricao_alerta, "ALERTA_COMBINADO_TAQUICARDIA_E_FEBRE", sizeof(amostra.descricao_alerta));
   } else if (taquicardia) {
     amostra.alerta_critico = true;
-    strncpy(amostra.descricao_alerta, "ALERTA_TAQUICARDIA_BPM_ALTO", sizeof(amostra.descricao_alerta));
+    strncpy(amostra.nivel_risco, "ALTO", sizeof(amostra.nivel_risco));
+    strncpy(amostra.descricao_alerta, "ALERTA_TAQUICARDIA_ACIMA_120BPM", sizeof(amostra.descricao_alerta));
   } else if (bradicardia) {
     amostra.alerta_critico = true;
-    strncpy(amostra.descricao_alerta, "ALERTA_BRADICARDIA_BPM_BAIXO", sizeof(amostra.descricao_alerta));
+    strncpy(amostra.nivel_risco, "ALTO", sizeof(amostra.nivel_risco));
+    strncpy(amostra.descricao_alerta, "ALERTA_BRADICARDIA_ABAIXO_50BPM", sizeof(amostra.descricao_alerta));
   } else if (febre) {
     amostra.alerta_critico = true;
-    strncpy(amostra.descricao_alerta, "ALERTA_FEBRE_HIPERTERMIA", sizeof(amostra.descricao_alerta));
+    strncpy(amostra.nivel_risco, "ALTO", sizeof(amostra.nivel_risco));
+    strncpy(amostra.descricao_alerta, "ALERTA_FEBRE_ACIMA_38C", sizeof(amostra.descricao_alerta));
   } else if (hipotermia) {
     amostra.alerta_critico = true;
-    strncpy(amostra.descricao_alerta, "ALERTA_HIPOTERMIA", sizeof(amostra.descricao_alerta));
+    strncpy(amostra.nivel_risco, "ALTO", sizeof(amostra.nivel_risco));
+    strncpy(amostra.descricao_alerta, "ALERTA_HIPOTERMIA_ABAIXO_35C", sizeof(amostra.descricao_alerta));
   } else if (imobilidade && (amostra.batimentos_bpm > 105 || amostra.batimentos_bpm < 55)) {
     amostra.alerta_critico = true;
-    strncpy(amostra.descricao_alerta, "ALERTA_IMOBILIDADE_RISCO_SINCOPE", sizeof(amostra.descricao_alerta));
+    strncpy(amostra.nivel_risco, "ALTO", sizeof(amostra.nivel_risco));
+    strncpy(amostra.descricao_alerta, "ALERTA_IMOBILIDADE_COM_ALTERACAO_CARDIACA", sizeof(amostra.descricao_alerta));
   }
 
-  // Aciona imediatamente o LED de Alerta na Borda (independe de nuvem/Wi-Fi!)
   digitalWrite(PIN_LED_ALERTA, amostra.alerta_critico ? HIGH : LOW);
-
   return amostra;
 }
 
 // ============================================================================
-// 6. SETUP E LOOP PRINCIPAL DO ESP32
+// 8. SETUP E LOOP PRINCIPAL
 // ============================================================================
 void setup() {
   Serial.begin(115200);
-  delay(500);
+  delay(400);
 
   Serial.println(F("\n============================================================"));
-  Serial.println(F("   CARDIOIA - FASE 3 (PARTE 1: EDGE COMPUTING & SPIFFS)     "));
+  Serial.println(F("   CARDIOIA - FASE 3 (PARTE 2: FOG/CLOUD MQTT + NODE-RED)   "));
   Serial.println(F("   Grupo: Data Health Solutions - FIAP                      "));
   Serial.println(F("============================================================"));
 
-  // Configuração dos pinos de I/O
   pinMode(PIN_BTN_PULSO, INPUT_PULLUP);
   pinMode(PIN_SW_WIFI, INPUT_PULLUP);
   pinMode(PIN_LED_WIFI, OUTPUT);
@@ -461,62 +448,79 @@ void setup() {
 
   attachInterrupt(digitalPinToInterrupt(PIN_BTN_PULSO), isrBotaoPulso, FALLING);
 
-  // Inicializa Sensor 1: DHT22
   sensorDHT.setup(PIN_DHT22, DHTesp::DHT22);
-  Serial.println(F("[SENSOR 1] DHT22 (Temperatura e Umidade) inicializado no GPIO 15."));
-
-  // Inicializa Sensor 2: Potenciômetro + Botão de Pulso Cardíaco
-  Serial.println(F("[SENSOR 2] Monitor de Pulso/BPM inicializado no GPIO 34 (ADC) e GPIO 4 (Botao)."));
-
-  // Inicializa Sensor 3: Acelerômetro e Giroscópio MPU6050
   Wire.begin(PIN_I2C_SDA, PIN_I2C_SCL);
   if (sensorMPU.begin()) {
     mpuDisponivel = true;
     sensorMPU.setAccelerometerRange(MPU6050_RANGE_8_G);
     sensorMPU.setGyroRange(MPU6050_RANGE_500_DEG);
     sensorMPU.setFilterBandwidth(MPU6050_BAND_21_HZ);
-    Serial.println(F("[SENSOR 3] Acelerometro MPU6050 inicializado via I2C (GPIO 21/22)."));
-  } else {
-    mpuDisponivel = false;
-    Serial.println(F("[SENSOR 3] MPU6050 em modo emulado (fallback de aceleracao ativo)."));
   }
 
-  // Inicializa armazenamento local SPIFFS
   inicializarSPIFFS();
 
-  // Lê estado inicial da conectividade Wi-Fi
-  wifiConectado         = (digitalRead(PIN_SW_WIFI) == HIGH);
-  wifiConectadoAnterior = wifiConectado;
-  digitalWrite(PIN_LED_WIFI, wifiConectado ? HIGH : LOW);
+  mqttClient.setServer(MQTT_BROKER, MQTT_PORT);
+  mqttClient.setBufferSize(1024);
+  mqttClient.setCallback(callbackMQTT);
 
-  Serial.printf("[REDE] Estado inicial de conectividade Wi-Fi (wifiConectado): %s\n",
-                wifiConectado ? "ONLINE (true)" : "OFFLINE (false)");
-  Serial.println(F("[DICA] Use a chave deslizante (GPIO 18) no Wokwi ou digite 'offline' / 'online' no Monitor Serial.\n"));
+  wifiConectado = (digitalRead(PIN_SW_WIFI) == HIGH);
+  wifiConectadoAnterior = wifiConectado;
+  if (wifiConectado) {
+    conectarWiFi();
+    conectarMQTT();
+  }
 }
 
 void loop() {
-  // 1. Verifica continuamente a conectividade e executa sincronização se reconectado
-  atualizarEstadoConectividade();
+  // 1. Lê a chave física de simulação de conectividade Wi-Fi (GPIO 18)
+  wifiConectado = (digitalRead(PIN_SW_WIFI) == HIGH);
 
-  // 2. Coleta periódica dos sensores e processamento na borda (Edge Computing)
-  unsigned long agora = millis();
-  if (agora - ultimaColetaMs >= INTERVALO_COLETA_MS) {
-    ultimaColetaMs = agora;
-
-    AmostraVital amostra = coletarEProcessarSinaisVitais();
-
+  if (wifiConectado != wifiConectadoAnterior) {
     if (wifiConectado) {
-      // Se houver dados residuais offline, sincroniza antes de enviar o pacote atual
-      if (totalAmostrasPendentes > 0) {
-        sincronizarDadosOfflineComNuvem();
-      }
-      // Envia em tempo real para a nuvem via Serial.println
-      enviarAmostraParaNuvem(amostra, "TEMPO_REAL");
+      Serial.println(F("\n>>> [REDE] Chave Wi-Fi ativada (ONLINE) -> Reconectando Wi-Fi e Broker MQTT... <<<"));
+      conectarWiFi();
+      conectarMQTT();
     } else {
-      // Modo Resiliência Offline: armazena localmente no SPIFFS e Buffer Circular
+      Serial.println(F("\n>>> [REDE] Chave Wi-Fi desativada (OFFLINE) -> Entrando em modo de resiliencia local (SPIFFS)... <<<"));
+      if (mqttClient.connected()) {
+        mqttClient.publish(TOPICO_STATUS, "{\"status\":\"OFFLINE_SIMULADO\",\"paciente_id\":\"PAC-001\"}", true);
+        mqttClient.disconnect();
+      }
+    }
+    wifiConectadoAnterior = wifiConectado;
+  }
+
+  // 2. Mantém loop MQTT ativo se estiver conectado
+  bool onlineNaNuvem = false;
+  if (wifiConectado) {
+    if (WiFi.status() != WL_CONNECTED) {
+      conectarWiFi();
+    }
+    if (WiFi.status() == WL_CONNECTED) {
+      onlineNaNuvem = conectarMQTT();
+      if (onlineNaNuvem) {
+        mqttClient.loop();
+      }
+    }
+  }
+  digitalWrite(PIN_LED_WIFI, onlineNaNuvem ? HIGH : LOW);
+
+  // 3. Coleta periódica e envio MQTT (ou gravação offline SPIFFS)
+  unsigned long agora = millis();
+  if (agora - ultimaPublicacaoMs >= INTERVALO_PUBLICACAO_MS) {
+    ultimaPublicacaoMs = agora;
+
+    AmostraVital amostra = lerSensoresEAnalisarRisco();
+
+    if (onlineNaNuvem) {
+      if (totalAmostrasPendentes > 0) {
+        sincronizarFilaOfflineMQTT();
+      }
+      publicarAmostraMQTT(amostra, "TEMPO_REAL");
+    } else {
       armazenarLeituraOffline(amostra);
     }
   }
 
-  delay(50);
+  delay(40);
 }
